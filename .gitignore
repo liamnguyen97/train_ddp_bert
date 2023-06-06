@@ -1,4 +1,4 @@
-*.json
 checkpoints/*
 dataset/*
+__pycache__/*
 
