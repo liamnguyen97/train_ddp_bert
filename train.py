@@ -7,7 +7,7 @@ from peft import LoraConfig, get_peft_model
 from transformers import AutoConfig, AutoTokenizer
 
 from contextlib import nullcontext
-
+from torch.cuda.amp import GradScaler, autocast
 from lora_model import LoraModelForCasualLM
 from utils.common import download_from_driver
 from prepare_data import create_datasets
@@ -15,7 +15,8 @@ from torch.distributed import  destroy_process_group
 from transformers import DataCollatorForSeq2Seq
 from torch.utils.data import DistributedSampler,SequentialSampler,DataLoader
 from transformers import AutoConfig, AutoModelForCausalLM
-
+from torch.distributed import init_process_group,  destroy_process_group
+from torch.nn.parallel import DistributedDataParallel as DDP
 import warnings
 warnings.filterwarnings('ignore')
 torch.manual_seed(42)
@@ -72,15 +73,15 @@ class Trainer:
             self.ctx = nullcontext()
         else:
             # TODO Otherwise, use 'torch.amp.autocast' context with the specified dtype, and initialize GradScaler if mixed_precision_dtype is float16.
-            self.ctx = None ### YOUR CODE HERE ###
-            self.gradscaler = None ### YOUR CODE HERE ###
+            self.ctx = torch.amp.autocast(device_type='cuda', dtype=mixed_precision_dtype) ### YOUR CODE HERE ###
+            self.gradscaler = GradScaler() ### YOUR CODE HERE ###
             
 
     def _set_ddp_training(self):
         # TODO: Initialize the DistributedDataParallel wrapper for the model. 
         # You would need to pass the model and specify the device IDs
         # and output device for the data parallelism.
-        self.model = None ### YOUR CODE HERE ###
+        self.model = DDP(self.model, device_ids=[self.gpu_id], output_device=self.gpu_id)
 
         
     def _run_batch(self, batch):
@@ -102,8 +103,8 @@ class Trainer:
         
         # TODO: If 'mixed_precision_dtype' is torch.float16, you have to modify the backward using the gradscaler.
         if self.mixed_precision_dtype==torch.float16:
-            ### YOUR CODE HERE ###
-            pass 
+            # Scale the loss and backpropagate with the help of GradScaler
+            self.gradscaler.scale(loss).backward()
         else:
             loss.backward()
 
@@ -142,10 +143,8 @@ class Trainer:
     
                 #If 'mixed_precision_dtype' is torch.float16, you have to modify the gradient update step using the gradscaler.
                 if self.mixed_precision_dtype==torch.float16:
-                    ### YOUR CODE HERE ###
-                    # TODO: optimizer step
-                    # TODO: update scaler factor 
-                    pass 
+                    self.gradscaler.step(self.optimizer)
+                    self.gradscaler.update()
                 else:
                     self.optimizer.step()
                 self.optimizer.zero_grad()
@@ -309,16 +308,18 @@ if __name__ == "__main__":
 
     backend = "nccl"
     model_path = 'bigscience/bloom-1b7'
-    if os.environ.get("DEBUG"):
-        data_path = "test_data.json"
-    else:
-        data_path = 'alpaca_data.json'
-        download_from_driver(path= DRIVER_DATA_PATH, location_path= data_path)
-
+    # torch.backends.cuda.matmul.allow_tf32 = True # allow tf32 on matmul
+    # torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
+    # if os.environ.get("DEBUG"):
+    #     data_path = "test_data.json"
+    # else:
+    #     data_path = 'alpaca_data.json'
+    #     download_from_driver(path= DRIVER_DATA_PATH, location_path= data_path)
+    data_path = 'alpaca_data.json'
     size_valid_set = 0.1
     max_length = 512
     num_epochs = 10
-    batch_size = 2
+    batch_size = 4
     gradient_accumulation_steps = 16
 
     learning_rate = 3e-4
@@ -331,14 +332,15 @@ if __name__ == "__main__":
     eval_freq = 150
     
     # TODO: Choose strategy
-    distributed_strategy = "no" ### YOUR CODE HERE ###
+    distributed_strategy = "ddp" ### YOUR CODE HERE ###
     
     if distributed_strategy  == "ddp":
         # TODO: Initialize the process group for distributed data parallelism with nccl backend.
         # After that, you should set the 'local_rank' from the environment variable 'LOCAL_RANK'.
         
         # Initialize the process group ### YOUR CODE HERE ###
-        local_rank = None ### YOUR CODE HERE ###
+        init_process_group(backend=backend)
+        local_rank = int(os.environ['LOCAL_RANK'])
     else:
         os.environ['RANK'] = '0'
         local_rank = 0
