@@ -308,14 +308,14 @@ if __name__ == "__main__":
 
     backend = "nccl"
     model_path = 'bigscience/bloom-1b7'
-    # torch.backends.cuda.matmul.allow_tf32 = True # allow tf32 on matmul
-    # torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
-    # if os.environ.get("DEBUG"):
-    #     data_path = "test_data.json"
-    # else:
-    #     data_path = 'alpaca_data.json'
-    #     download_from_driver(path= DRIVER_DATA_PATH, location_path= data_path)
-    data_path = 'alpaca_data.json'
+    torch.backends.cuda.matmul.allow_tf32 = True # allow tf32 on matmul
+    torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
+    if os.environ.get("DEBUG"):
+        data_path = "test_data.json"
+    else:
+        data_path = 'alpaca_data.json'
+        download_from_driver(path= DRIVER_DATA_PATH, location_path= data_path)
+
     size_valid_set = 0.1
     max_length = 512
     num_epochs = 10
