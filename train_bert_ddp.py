@@ -57,7 +57,7 @@ ddp_model = DDP(model, device_ids=[ddp_local_rank], output_device=ddp_local_rank
 train_dataloader = DataLoader(
     encoded_train_dataset,
     sampler=DistributedSampler(encoded_train_dataset),
-    batch_size=8,
+    batch_size=16,
     collate_fn=lambda x: {
         "input_ids": torch.stack([sample["input_ids"] for sample in x]),
         "attention_mask": torch.stack([sample["attention_mask"] for sample in x]),
@@ -68,7 +68,7 @@ train_dataloader = DataLoader(
 eval_dataloader = DataLoader(
     encoded_eval_dataset,
     sampler=SequentialSampler(encoded_eval_dataset),
-    batch_size=8,
+    batch_size=16,
     collate_fn=lambda x: {
         "input_ids": torch.stack([sample["input_ids"] for sample in x]),
         "attention_mask": torch.stack([sample["attention_mask"] for sample in x]),
